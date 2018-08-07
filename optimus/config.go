@@ -37,7 +37,7 @@ type Config struct {
 	Workers      map[auth.Addr]*workerConfig `yaml:"workers"`
 	Benchmarks   benchmarks.Config           `yaml:"benchmarks"`
 	Marketplace  marketplaceConfig           `yaml:"marketplace"`
-  Debug        *debug.Config               `yaml:"debug"`
+ 	Debug        *debug.Config               `yaml:"debug"`
 }
 
 func (m *Config) Validate() error {
