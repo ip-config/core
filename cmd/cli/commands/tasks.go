@@ -51,7 +51,7 @@ var taskPullOutput string
 var taskRootCmd = &cobra.Command{
 	Use:               "task",
 	Short:             "Tasks management",
-	PersistentPreRunE: loadKeyStoreIfRequired,
+	PersistentPreRunE: loadKeyStoreWrapper,
 }
 
 func getActiveDealIDs(ctx context.Context) ([]*big.Int, error) {
@@ -297,7 +297,13 @@ var taskLogsCmd = &cobra.Command{
 	Short: "Retrieve task logs",
 	Args:  cobra.MinimumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx, cancel := newTimeoutContext()
+		var ctx context.Context
+		var cancel context.CancelFunc
+		if follow {
+			ctx, cancel = context.WithCancel(context.Background())
+		} else {
+			ctx, cancel = newTimeoutContext()
+		}
 		defer cancel()
 
 		node, err := newTaskClient(ctx)
@@ -403,7 +409,7 @@ var taskPullCmd = &cobra.Command{
 
 		w := bufio.NewWriter(wr)
 
-		ctx, cancel := newTimeoutContext()
+		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
 		node, err := newTaskClient(ctx)
@@ -500,7 +506,7 @@ var taskPushCmd = &cobra.Command{
 			return fmt.Errorf("cannot stat file: %v", err)
 		}
 
-		ctx, cancel := newTimeoutContext()
+		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
 		node, err := newTaskClient(ctx)

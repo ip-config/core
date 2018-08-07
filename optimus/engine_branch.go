@@ -68,10 +68,14 @@ func (m *node) FindOptimum() *Knapsack {
 
 	for _, node := range leafNodes {
 		price := node.Knapsack.PPSf64()
-		if price > winnerPrice {
+		if price >= winnerPrice {
 			winnerNode = node
 			winnerPrice = price
 		}
+	}
+
+	if winnerNode == nil {
+		return nil
 	}
 
 	return winnerNode.Knapsack

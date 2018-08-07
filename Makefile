@@ -2,7 +2,7 @@
 
 # Version of the entire package. Do not forget to update this when it's time
 # to bump the version.
-VERSION = v0.4.5
+VERSION = v0.4.8
 
 # Build tag. Useful to distinguish between same-version builds, but from
 # different commits.
@@ -47,6 +47,7 @@ OPTIMUS    := ${TARGETDIR}/sonmoptimus_$(OS_ARCH)
 LSGPU      := ${TARGETDIR}/lsgpu_$(OS_ARCH)
 PANDORA    := ${TARGETDIR}/pandora_$(OS_ARCH)
 ORACLE     := ${TARGETDIR}/sonmoracle_$(OS_ARCH)
+CONNOR     := ${TARGETDIR}/sonmconnor_$(OS_ARCH)
 
 TAGS = nocgo
 
@@ -112,9 +113,13 @@ build/oracle:
 	@echo "+ $@"
 	${GO} build -tags "$(TAGS)" -ldflags "$(LDFLAGS)" -o ${ORACLE} ${GOCMD}/oracle
 
+build/connor:
+	@echo "+ $@"
+	${GO} build -tags "$(TAGS)" -ldflags "$(LDFLAGS)" -o ${CONNOR} ${GOCMD}/connor
+
 build/insomnia: build/worker build/cli build/node
 
-build/aux: build/relay build/rv build/dwh build/pandora build/optimus build/oracle
+build/aux: build/relay build/rv build/dwh build/pandora build/optimus build/oracle build/connor
 
 build: build/insomnia build/aux
 

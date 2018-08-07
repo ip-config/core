@@ -55,7 +55,13 @@ func printTaskStatus(cmd *cobra.Command, id string, taskStatus *pb.TaskStatusRep
 		cmd.Printf("ID: %s\r\n", id)
 		cmd.Printf("  Image:  %s\r\n", taskStatus.GetImageName())
 		cmd.Printf("  Status: %s\r\n", taskStatus.GetStatus().String())
-		if tag := taskStatus.GetTag(); len(tag) != 0 {
+		if tag := taskStatus.GetTag(); len(tag.GetData()) != 0 {
+			tagData, err := yaml.Marshal(tag.GetData())
+			if err != nil {
+				cmd.Printf("Tag:             failed to marshal tag: %v\r\n", err)
+			} else {
+				cmd.Printf("Tag:             %s\r\n", string(tagData))
+			}
 			cmd.Printf("  Tag: %s\r\n", tag)
 		}
 		cmd.Printf("  Uptime: %s\r\n", time.Duration(taskStatus.GetUptime()).String())
@@ -196,12 +202,12 @@ func printOrdersList(cmd *cobra.Command, orders []*pb.Order) {
 			return
 		}
 
-		cmd.Println("        ID | type |        total price       |   duration ")
+		cmd.Println("        ID | type |          price           |   duration ")
 		for _, order := range orders {
-			cmd.Printf("%10s | %4s | %20s USD | %10s\r\n",
+			cmd.Printf("%10s | %4s | %18s USD/h | %10s\r\n",
 				order.GetId().Unwrap().String(),
 				order.OrderType.String(),
-				order.TotalPrice(),
+				order.PricePerHour(),
 				(time.Second * time.Duration(order.Duration)).String())
 		}
 	} else {
@@ -222,7 +228,7 @@ func printOrderDetails(cmd Printer, order *pb.Order) {
 		}
 
 		cmd.Printf("Duration:        %s\r\n", (time.Duration(order.GetDuration()) * time.Second).String())
-		cmd.Printf("Total price:     %s USD (%s USD/sec)\r\n", order.TotalPrice(), order.Price.ToPriceString())
+		cmd.Printf("Total price:     %s USD (%s USD/hour)\r\n", order.TotalPrice(), order.PricePerHour())
 
 		cmd.Printf("Author ID:       %s\r\n", order.GetAuthorID().Unwrap().Hex())
 		if order.GetCounterpartyID() != nil {

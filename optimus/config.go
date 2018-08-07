@@ -12,6 +12,7 @@ import (
 	"github.com/sonm-io/core/insonmnia/benchmarks"
 	"github.com/sonm-io/core/insonmnia/logging"
 	"github.com/sonm-io/core/proto"
+	"github.com/sonm-io/core/util/debug"
 )
 
 const (
@@ -36,6 +37,7 @@ type Config struct {
 	Workers      map[auth.Addr]*workerConfig `yaml:"workers"`
 	Benchmarks   benchmarks.Config           `yaml:"benchmarks"`
 	Marketplace  marketplaceConfig           `yaml:"marketplace"`
+  Debug        *debug.Config               `yaml:"debug"`
 }
 
 func (m *Config) Validate() error {
