@@ -56,35 +56,6 @@ func (d *Description) ID() string {
 	return d.TaskId
 }
 
-type descriptionAlias Description
-
-type descriptionMarshaller struct {
-	*descriptionAlias
-	Networks []*structs.NetworkSpec
-	RefField reference.Field `json:"Reference"`
-}
-
-func (d Description) MarshalJSON() ([]byte, error) {
-	b, err := json.Marshal(&descriptionMarshaller{
-		descriptionAlias: (*descriptionAlias)(&d),
-		Networks:         d.networks,
-		RefField:         reference.AsField(d.Reference),
-	})
-
-	return b, err
-}
-
-func (d *Description) UnmarshalJSON(data []byte) error {
-	aux := &descriptionMarshaller{descriptionAlias: (*descriptionAlias)(d)}
-	if err := json.Unmarshal(data, &aux); err != nil {
-		return err
-	}
-
-	d.Reference = aux.RefField.Reference()
-	d.networks = aux.Networks
-	return nil
-}
-
 func (d *Description) Volumes() map[string]*pb.Volume {
 	return d.Container.Volumes
 }

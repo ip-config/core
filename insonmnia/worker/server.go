@@ -20,6 +20,7 @@ import (
 	"github.com/docker/go-connections/nat"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/gliderlabs/ssh"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grpc-ecosystem/go-grpc-prometheus"
 	log "github.com/noxiouz/zapctx/ctxlog"
@@ -371,18 +372,36 @@ func (m *Worker) cancelDealTasks(deal *pb.Deal) error {
 }
 
 type runningContainerInfo struct {
-	Description Description   `json:"description,omitempty"`
-	Cinfo       ContainerInfo `json:"cinfo,omitempty"`
-	Spec        pb.TaskSpec   `json:"spec,omitempty"`
+	Description descriptionMarshallable   `json:"description,omitempty"`
+	Cinfo       containerInfoMarshallable `json:"cinfo,omitempty"`
+	Spec        pb.TaskSpec               `json:"spec,omitempty"`
+}
+
+type descriptionMarshallable struct {
+	Description
+	Reference reference.Field `json:"Reference"`
+	Networks  []*structs.NetworkSpec
+}
+
+type containerInfoMarshallable struct {
+	ContainerInfo
+	PublicKey []byte `json:"PublicKey"`
 }
 
 func (m *Worker) saveContainerInfo(id string, info ContainerInfo, d Description, spec pb.TaskSpec) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	dm := descriptionMarshallable{Description: d}
+	dm.Reference = reference.AsField(d.Reference)
+	dm.Networks = dm.networks
+
+	cim := containerInfoMarshallable{ContainerInfo: info}
+	cim.PublicKey = info.PublicKey.Marshal()
+
 	m.storage.Save(info.ID, runningContainerInfo{
-		Description: d,
-		Cinfo:       info,
+		Description: dm,
+		Cinfo:       cim,
 		Spec:        spec,
 	})
 
@@ -949,6 +968,15 @@ func (m *Worker) setupRunningContainers() error {
 				continue
 			}
 
+			info.Cinfo.ContainerInfo.PublicKey, err = ssh.ParsePublicKey(info.Cinfo.PublicKey)
+
+			if err != nil {
+				log.S(m.ctx).Error("failed to load ssh key", zap.Error(err))
+				return err
+			}
+			info.Description.Description.networks = info.Description.Networks
+			info.Description.Description.Reference = info.Description.Reference.Reference()
+
 			contJson, err := dockerClient.ContainerInspect(m.ctx, container.ID)
 
 			if err != nil {
@@ -968,7 +996,7 @@ func (m *Worker) setupRunningContainers() error {
 				info.Cinfo.status = pb.TaskStatusReply_BROKEN
 			}
 
-			m.containers[info.Cinfo.TaskId] = &info.Cinfo
+			m.containers[info.Cinfo.TaskId] = &info.Cinfo.ContainerInfo
 			mounts := make([]volume.Mount, 0)
 
 			for _, spec := range info.Spec.Container.Mounts {
@@ -981,7 +1009,7 @@ func (m *Worker) setupRunningContainers() error {
 
 			info.Description.mounts = mounts
 
-			m.ovs.Attach(m.ctx, container.ID, info.Description)
+			m.ovs.Attach(m.ctx, container.ID, info.Description.Description)
 			m.resources.ConsumeTask(info.Cinfo.AskID, info.Cinfo.TaskId, info.Spec.Resources)
 		}
 	}
