@@ -969,7 +969,6 @@ func (m *Worker) setupRunningContainers() error {
 			}
 
 			info.Cinfo.ContainerInfo.PublicKey, err = ssh.ParsePublicKey(info.Cinfo.PublicKey)
-
 			if err != nil {
 				log.S(m.ctx).Error("failed to load ssh key", zap.Error(err))
 				return err
