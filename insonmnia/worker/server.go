@@ -397,7 +397,9 @@ func (m *Worker) saveContainerInfo(id string, info ContainerInfo, d Description,
 	dm.Networks = dm.networks
 
 	cim := containerInfoMarshallable{ContainerInfo: info}
-	cim.PublicKey = info.PublicKey.Marshal()
+	if info.PublicKey != nil {
+		cim.PublicKey = info.PublicKey.Marshal()
+	}
 
 	m.storage.Save(info.ID, runningContainerInfo{
 		Description: dm,
@@ -969,10 +971,7 @@ func (m *Worker) setupRunningContainers() error {
 			}
 
 			info.Cinfo.ContainerInfo.PublicKey, err = ssh.ParsePublicKey(info.Cinfo.PublicKey)
-			if err != nil {
-				log.S(m.ctx).Error("failed to load ssh key", zap.Error(err))
-				return err
-			}
+
 			info.Description.Description.networks = info.Description.Networks
 			info.Description.Description.Reference = info.Description.Reference.Reference()
 
