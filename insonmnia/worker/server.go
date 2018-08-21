@@ -970,7 +970,7 @@ func (m *Worker) setupRunningContainers() error {
 				continue
 			}
 
-			info.Cinfo.ContainerInfo.PublicKey, err = ssh.ParsePublicKey(info.Cinfo.PublicKey)
+			info.Cinfo.ContainerInfo.PublicKey, _ = ssh.ParsePublicKey(info.Cinfo.PublicKey)
 
 			info.Description.Description.networks = info.Description.Networks
 			info.Description.Description.Reference = info.Description.Reference.Reference()
