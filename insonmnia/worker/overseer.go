@@ -1,6 +1,8 @@
 package worker
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,14 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sonm-io/core/insonmnia/structs"
-	"github.com/sonm-io/core/insonmnia/worker/network"
-	"github.com/sonm-io/core/insonmnia/worker/plugin"
-	"github.com/sonm-io/core/insonmnia/worker/volume"
-	"github.com/sonm-io/core/util/multierror"
-	"github.com/sonm-io/core/util/xdocker"
-	"go.uber.org/zap"
-
 	"github.com/docker/distribution/reference"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/filters"
@@ -24,8 +18,16 @@ import (
 	"github.com/docker/go-connections/nat"
 	"github.com/gliderlabs/ssh"
 	log "github.com/noxiouz/zapctx/ctxlog"
+	"github.com/pkg/errors"
+	"github.com/sonm-io/core/insonmnia/structs"
 	"github.com/sonm-io/core/insonmnia/worker/gpu"
+	"github.com/sonm-io/core/insonmnia/worker/network"
+	"github.com/sonm-io/core/insonmnia/worker/plugin"
+	"github.com/sonm-io/core/insonmnia/worker/volume"
 	pb "github.com/sonm-io/core/proto"
+	"github.com/sonm-io/core/util/multierror"
+	"github.com/sonm-io/core/util/xdocker"
+	"go.uber.org/zap"
 )
 
 const overseerTag = "sonm.overseer"
@@ -460,8 +462,12 @@ func (o *overseer) collectStats() {
 }
 
 func (o *overseer) Load(ctx context.Context, rd io.Reader) (imageLoadStatus, error) {
-	response, err := o.client.ImageLoad(ctx, rd, true)
+	rd, err := o.removeImageRepoAndTag(rd)
+	if err != nil {
+		return imageLoadStatus{}, fmt.Errorf("failed to remove name and tag: %v", err)
+	}
 
+	response, err := o.client.ImageLoad(ctx, rd, true)
 	if err != nil {
 		log.G(o.ctx).Error("failed to load an image", zap.Error(err))
 		return imageLoadStatus{}, err
@@ -656,4 +662,110 @@ func (o *overseer) OnDealFinish(ctx context.Context, containerID string) error {
 
 func (o *overseer) Logs(ctx context.Context, id string, opts types.ContainerLogsOptions) (io.ReadCloser, error) {
 	return o.client.ContainerLogs(ctx, id, opts)
+}
+
+func (o *overseer) removeImageRepoAndTag(image io.Reader) (io.Reader, error) {
+	decompressed, err := o.extract(image)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decompress image: %v", err)
+	}
+
+	var pruned []tarHeader2file
+	for _, h2f := range decompressed {
+		switch h2f.header.Name {
+		case "manifest.json":
+			prunedManifest, err := o.getPrunedImageManifest(h2f.file.Bytes())
+			if err != nil {
+				return nil, fmt.Errorf("failed to prune image manifest: %v", err)
+			}
+			h2f.file = bytes.NewBuffer(prunedManifest)
+			h2f.header.Size = int64(len(prunedManifest))
+		}
+		pruned = append(pruned, h2f)
+	}
+
+	compressed, err := o.compress(pruned)
+	if err != nil {
+		return nil, fmt.Errorf("failed to re-compress image: %v", err)
+	}
+
+	return compressed, nil
+}
+
+func (o *overseer) extract(r io.Reader) ([]tarHeader2file, error) {
+	var tr = tar.NewReader(r)
+	var out []tarHeader2file
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			return out, nil
+		}
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to read header: %v", err)
+		}
+
+		if header == nil {
+			continue
+		}
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			out = append(out, tarHeader2file{header: header, file: nil})
+		case tar.TypeReg:
+			var buf = bytes.NewBuffer([]byte{})
+			if _, err := io.Copy(buf, tr); err != nil {
+				return nil, err
+			}
+			out = append(out, tarHeader2file{header: header, file: buf})
+		}
+	}
+}
+
+func (o *overseer) compress(decompressed []tarHeader2file) (io.Reader, error) {
+	buf := bytes.NewBuffer([]byte{})
+	tw := tar.NewWriter(buf)
+	defer tw.Close()
+
+	for _, h2f := range decompressed {
+		if err := tw.WriteHeader(h2f.header); err != nil {
+			return nil, fmt.Errorf("failed to add header `%s`: %v", h2f.header.Name, err)
+		}
+		if h2f.file != nil {
+			if _, err := io.Copy(tw, h2f.file); err != nil {
+				return nil, fmt.Errorf("failed to add contents for header `%s`: %v", h2f.header.Name, err)
+			}
+		}
+	}
+
+	return buf, nil
+}
+
+func (o *overseer) getPrunedImageManifest(manifest []byte) ([]byte, error) {
+	var contents []interface{}
+	if err := json.Unmarshal(manifest, &contents); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal manifest.json: %v", err)
+	}
+
+	if len(contents) < 1 {
+		return nil, fmt.Errorf("manifest.json is empty")
+	}
+
+	data, ok := contents[0].(map[string]interface{})
+	if !ok {
+		return nil, errors.New("unexpected manifest.json data layout")
+	}
+
+	data["RepoTags"] = nil
+	marshaled, err := json.Marshal(contents)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal manifest.json: %v", err)
+	}
+
+	return marshaled, nil
+}
+
+type tarHeader2file struct {
+	header *tar.Header
+	file   *bytes.Buffer
 }
